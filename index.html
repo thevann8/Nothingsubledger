@@ -202,19 +202,19 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
 </script><script>
 /* Keeps an existing Thai QR image while replacing the old PromptPay details. */
 (() => {
-  const thaiBank = { label: 'Thai Bank', bankName: 'Kasikorn Bank', name: 'Thet Naing', account: '2028956269', note: '' };
+  const thaiBank = { label: 'Thai Banks', bankName: 'Kasikorn Bank', name: 'Thet Naing', account: '2028956269', note: '' };
   const migrateThaiBank = () => {
     const settings = state.botSettings || (state.botSettings = {});
     const payments = settings.payments || (settings.payments = {});
     const current = payments.promptpay || {};
-    if (current.label === 'PromptPay' || current.account === '0627616503' || !current.account) payments.promptpay = { ...current, ...thaiBank };
+    if (current.label === 'PromptPay' || current.label === 'Thai Bank' || current.account === '0627616503' || !current.account) payments.promptpay = { ...current, ...thaiBank };
   };
   const existingLoad = window.loadBotControl;
   window.loadBotControl = () => {
     migrateThaiBank();
     existingLoad();
     document.querySelectorAll('#botPlans label').forEach(label => {
-      if (label.textContent.includes('PromptPay')) label.firstChild.textContent = 'THB · Thai Bank';
+      if (label.textContent.includes('PromptPay')) label.firstChild.textContent = 'THB · Thai Banks';
     });
   };
   const existingSwitch = window.switchView;
@@ -229,20 +229,23 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
   const existingSave = window.saveBotControl;
   window.loadBotControl = () => {
     existingLoad();
-    const card = [...document.querySelectorAll('#botPayments .payment-card')].find(item => item.querySelector('h3')?.textContent.trim() === 'Thai Bank');
+    const card = [...document.querySelectorAll('#botPayments .payment-card')].find(item => ['Thai Bank', 'Thai Banks'].includes(item.querySelector('h3')?.textContent.trim()));
     if (!card) return;
-    const bankField = card.querySelector('#payNotepromptpay');
-    if (!bankField) return;
-    bankField.closest('label').firstChild.textContent = 'Bank name';
+    const form = card.querySelector('.form'), accountHolder = card.querySelector('#payNamepromptpay'), bankNumber = card.querySelector('#payAccountpromptpay'), note = card.querySelector('#payNotepromptpay');
+    if (!form || !accountHolder || !bankNumber || !note) return;
+    card.querySelector('h3').textContent = 'Thai Banks';
+    if (!form.querySelector('#payBankNamepromptpay')) form.insertAdjacentHTML('afterbegin', '<label>Bank name<input id="payBankNamepromptpay" placeholder="e.g. Kasikorn Bank"></label>');
+    const bankField = form.querySelector('#payBankNamepromptpay');
     bankField.value = state.botSettings?.payments?.promptpay?.bankName || 'Kasikorn Bank';
-    bankField.placeholder = 'e.g. Kasikorn Bank';
+    accountHolder.closest('label').firstChild.textContent = 'Account holder name';
+    bankNumber.closest('label').firstChild.textContent = 'Bank number';
+    note.closest('label').firstChild.textContent = 'Note (optional)';
   };
   window.saveBotControl = () => {
-    const bankField = document.querySelector('#payNotepromptpay');
+    const bankField = document.querySelector('#payBankNamepromptpay');
     existingSave();
     if (!bankField || !state.botSettings?.payments?.promptpay) return;
     state.botSettings.payments.promptpay.bankName = bankField.value.trim() || 'Kasikorn Bank';
-    state.botSettings.payments.promptpay.note = '';
     commit();
   };
 })();
