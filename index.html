@@ -249,4 +249,41 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
     commit();
   };
 })();
+</script><script>
+/* Redeem usage summary is rendered after the campaign-card layout is complete. */
+(() => {
+  const summary = () => {
+    document.querySelectorAll('#redeemCodes .redeem-card').forEach(card => {
+      card.querySelector('.redeem-stat')?.remove();
+      const codeInput = card.querySelector('[data-code]');
+      const index = codeInput?.dataset.code;
+      const code = codeInput?.value.trim().toUpperCase();
+      if (index == null || !code) return;
+      const stat = state.botSettings?.redeemStats?.[code] || {};
+      const rewards = [0, 1, 2].map(rewardIndex => ({
+        index: rewardIndex,
+        days: Number(card.querySelector(`[data-rdays="${index}-${rewardIndex}"]`)?.value) || 0,
+        slots: Number(card.querySelector(`[data-rslots="${index}-${rewardIndex}"]`)?.value) || 0
+      })).filter(reward => reward.days > 0 && reward.slots > 0);
+      const total = rewards.reduce((sum, reward) => sum + reward.slots, 0);
+      const claimed = Math.min(total, Number(stat.uses) || 0);
+      const remaining = Math.max(0, total - claimed);
+      const breakdown = rewards.map(reward => {
+        const used = Math.min(reward.slots, Number(stat.rewardUses?.[reward.index]) || 0);
+        return `${reward.days} days: ${used} claimed · ${Math.max(0, reward.slots - used)} left`;
+      }).join(' &nbsp; • &nbsp; ');
+      const panel = document.createElement('div');
+      panel.className = 'redeem-stat';
+      panel.innerHTML = `<span class="used">${claimed} people claimed</span><span class="left">${remaining} slots remaining</span><span>${total} total slots</span>${breakdown ? `<span>${breakdown}</span>` : ''}`;
+      card.append(panel);
+    });
+  };
+  const target = document.getElementById('redeemCodes');
+  if (!target) return;
+  new MutationObserver(() => requestAnimationFrame(summary)).observe(target, { childList: true, subtree: true });
+  target.addEventListener('input', event => { if (event.target.matches('[data-code],[data-rdays],[data-rslots]')) summary(); });
+  setTimeout(summary, 600);
+  const oldLoad = window.loadBotControl;
+  window.loadBotControl = () => { oldLoad(); setTimeout(summary, 0); };
+})();
 </script></body></html>
