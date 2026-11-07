@@ -313,4 +313,32 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
   const oldRender = render; render = function () { oldRender(); const ads = filtered().filter(record => categoryOptions.includes(record.category)); const totals = sums(ads, record => record.agreed); const cards = document.getElementById('cards'); if (cards) { const adCard = [...cards.children][3]; if (adCard) adCard.outerHTML = card('Ads earned', totals, 'Telegram · Website · Video · Adsterra'); } const adsTable = document.getElementById('adsTable'); if (adsTable) adsTable.innerHTML = ads.map(record => `<tr><td><b>${esc(record.customer)}</b></td><td>${record.category}</td><td>${esc(record.notes)||'—'}</td><td>${money(record.agreed,record.currency)}</td><td>${money(record.paid,record.currency)} / ${money(Math.max(0,record.agreed-record.paid),record.currency)}</td><td><span class="status ${record.status.split(' ')[0]}">${record.status}</span></td></tr>`).join('') || '<tr><td colspan="6" class="empty">No advertising orders yet.</td></tr>'; };
   setTimeout(() => { renderAdmins(); renderInsights(); }, 500);
 })();
+</script><script>
+/* Final insight metrics: review queue is intentionally admin-chat only, not a dashboard card. */
+(() => {
+  const adCategories = ['Telegram Ads', 'Website Ads', 'Video Ads', 'Adsterra'];
+  const updateDashboard = () => {
+    const records = filtered(), adTotals = sums(records.filter(record => adCategories.includes(record.category)), record => record.agreed);
+    const overviewCards = document.getElementById('cards');
+    if (overviewCards?.children[3]) overviewCards.children[3].outerHTML = card('Ads earned', adTotals, 'Telegram · Website · Video · Adsterra');
+    const reportCards = document.getElementById('reportCards');
+    if (reportCards?.children[3]) reportCards.children[3].outerHTML = card('Ads earned', adTotals, 'Telegram · Website · Video · Adsterra');
+    const botControlCards = document.getElementById('botOverviewCards');
+    if (botControlCards) [...botControlCards.children].filter(node => node.textContent.includes('Pending payments')).forEach(node => node.remove());
+  };
+  const oldRender = render;
+  render = () => { oldRender(); updateDashboard(); };
+  const oldLoad = window.loadBotControl;
+  window.loadBotControl = () => { oldLoad(); updateDashboard(); };
+  const insight = document.getElementById('botinsights');
+  if (insight) {
+    const oldHtml = insight.querySelector('#insightCards');
+    const observer = new MutationObserver(() => {
+      [...oldHtml.children].filter(node => node.textContent.includes('Pending payment review')).forEach(node => node.remove());
+    });
+    observer.observe(oldHtml, { childList: true });
+    [...oldHtml.children].filter(node => node.textContent.includes('Pending payment review')).forEach(node => node.remove());
+  }
+  setTimeout(updateDashboard, 700);
+})();
 </script></body></html>
