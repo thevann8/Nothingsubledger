@@ -341,4 +341,58 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
   }
   setTimeout(updateDashboard, 700);
 })();
+</script><script>
+/* Final VIP operations layer: searchable memberships, renewal history, and one atomic Bot Control save. */
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `
+    .vip-tools{display:grid;grid-template-columns:minmax(220px,1fr) repeat(2,minmax(150px,.45fr));gap:10px;margin:-4px 0 18px}.vip-tools input,.vip-tools select{width:100%;min-width:0;padding:11px 12px;border:1px solid #2d4162;border-radius:10px;background:#0a1323;color:#edf3ff;font:inherit}.renewal-panel{margin-top:18px}.renewal-panel h2{margin-bottom:4px}.renewal-panel .muted{margin:0 0 14px}.vip-scroll{overflow:auto}.vip-scroll .table{min-width:860px}.renewal-tag{display:inline-block;margin-top:5px;padding:3px 7px;border-radius:20px;background:#2a2152;color:#cfc7ff;font-size:10px;font-weight:800;letter-spacing:.25px}.vip-tools input:focus,.vip-tools select:focus{outline:0;border-color:#8275fa;box-shadow:0 0 0 3px #7668f529}@media(max-width:700px){.vip-tools{grid-template-columns:1fr}.vip-scroll .table{min-width:780px}}
+  `;
+  document.head.append(css);
+
+  const vip = document.getElementById('vip');
+  if (!vip) return;
+  const notice = vip.querySelector('.notice');
+  notice.insertAdjacentHTML('afterend', `<div class="vip-tools"><input id="vipSearch" type="search" placeholder="Search name, @username, Telegram ID, or order ID"><select id="vipMethod"><option value="">All payment methods</option><option value="wave">Wave Pay</option><option value="kpay">KPay</option><option value="thai">Thai Banks</option><option value="usdt">USDT (BEP20)</option></select><select id="vipListMode"><option value="all">All VIP purchases</option><option value="renewal">Renewals only</option></select></div>`);
+  const vipPanel = vip.querySelector('.panel');
+  vipPanel.classList.add('vip-scroll');
+  vipPanel.insertAdjacentHTML('afterend', `<div class="panel renewal-panel"><h2>VIP renewal list</h2><p class="muted">Members who renewed while they still had active VIP access.</p><div class="vip-scroll"><table class="table"><thead><tr><th>Customer</th><th>Plan</th><th>Renewed at</th><th>Previous expiry / days remaining</th><th>New expiry</th><th>Payment</th></tr></thead><tbody id="renewalVipTable"></tbody></table></div></div>`);
+  const query = () => String(document.getElementById('vipSearch')?.value || '').trim().toLowerCase();
+  const method = record => String(record.paymentMethod || record.selectedPaymentMethod || '').toLowerCase();
+  const methodMatches = (record, choice) => !choice || (choice === 'wave' && method(record).includes('wave')) || (choice === 'kpay' && method(record).includes('kpay')) || (choice === 'thai' && (method(record).includes('thai') || method(record).includes('prompt'))) || (choice === 'usdt' && method(record).includes('usdt'));
+  const renewalRecord = record => record.purchaseType === 'RENEWAL' || /telegram vip renewal/i.test(record.notes || '');
+  const safe = value => esc(value || '');
+  const daysBetween = (from, until) => { if (!from || !until) return '—'; return `${Math.max(0, Math.ceil((new Date(`${until}T00:00:00Z`) - new Date(`${from}T00:00:00Z`)) / 86400000))} days left`; };
+  const drawVipLists = () => {
+    const search = query(), choice = document.getElementById('vipMethod').value, mode = document.getElementById('vipListMode').value;
+    const matches = record => !search || [record.customer, record.telegramName, record.telegramId, record.orderId, record.notes].some(value => String(value || '').toLowerCase().includes(search));
+    const records = (state.records || []).filter(record => record.category === 'VIP' && matches(record) && methodMatches(record, choice) && (mode !== 'renewal' || renewalRecord(record))).sort((a,b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const table = document.getElementById('vipTable');
+    table.innerHTML = records.map(record => `<tr><td><b>${safe(record.customer)}</b>${record.telegramName || record.telegramId ? `<br><span class="muted">${safe(record.telegramName)}${record.telegramId ? ` · ID: ${safe(record.telegramId)}` : ''}</span>` : ''}${renewalRecord(record) ? '<br><span class="renewal-tag">RENEWAL</span>' : ''}</td><td>${safe(record.plan || '—')}</td><td>${safe(record.date)}<br><span class="muted">${safe(record.endDate || '—')}</span></td><td>${money(record.agreed,record.currency)}</td><td>${money(record.paid,record.currency)} / ${money(Math.max(0,Number(record.agreed||0)-Number(record.paid||0)),record.currency)}</td><td><span class="status ${safe(String(record.status || 'Pending').split(' ')[0])}">${safe(record.status || 'Pending')}</span></td><td class="record-actions"><button class="btn" data-edit="${safe(record.id)}">Edit</button><button class="btn danger" data-delete="${safe(record.id)}">Delete</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No VIP purchases match this search.</td></tr>';
+    const renewals = Array.isArray(state.vipRenewalHistory) ? state.vipRenewalHistory.filter(item => { const text = [item.customerName,item.username,item.telegramId,item.orderId].join(' ').toLowerCase(); return (!search || text.includes(search)) && methodMatches(item, choice); }) : [];
+    document.getElementById('renewalVipTable').innerHTML = renewals.map(item => { const date = String(item.renewedAt || '').slice(0,10); return `<tr><td><b>${safe(item.customerName)}</b>${item.username || item.telegramId ? `<br><span class="muted">${item.username ? '@'+safe(item.username.replace(/^@/,'')) : ''}${item.telegramId ? ` · ID: ${safe(item.telegramId)}` : ''}</span>` : ''}<br><span class="renewal-tag">RENEWAL</span></td><td>${safe(item.planLabel)}</td><td>${safe(item.renewedAt ? new Date(item.renewedAt).toLocaleString() : '—')}</td><td>${safe(item.previousExpiry || '—')}<br><span class="muted">${daysBetween(date,item.previousExpiry)}</span></td><td>${safe(item.newExpiry || '—')}</td><td>${safe(item.paymentMethod || '—')}</td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">No synced renewal purchases yet.</td></tr>';
+  };
+  ['vipSearch','vipMethod','vipListMode'].forEach(id => document.getElementById(id).addEventListener(id === 'vipSearch' ? 'input' : 'change', drawVipLists));
+  const priorRender = render;
+  render = () => { priorRender(); drawVipLists(); };
+
+  window.saveBotControl = async () => {
+    const previous = state.botSettings || {}, settings = structuredClone(previous);
+    settings.plans = settings.plans || {};
+    for (const id of ['1','3','6']) { const plan = settings.plans[id] || {}; settings.plans[id] = { ...plan, label: document.getElementById(`pLabel${id}`)?.value.trim() || plan.label || '', months: Number(document.getElementById(`pMonths${id}`)?.value || plan.months || 1), extraDays: Number(document.getElementById(`pBonus${id}`)?.value || 0), mmk: Number(document.getElementById(`pPrice${id}`)?.value || 0), thb: Number(document.getElementById(`pThb${id}`)?.value || 0), usdt: Number(document.getElementById(`pUsdt${id}`)?.value || 0), description: document.getElementById(`pDescription${id}`)?.value.trim() || '' }; }
+    settings.payments = settings.payments || {};
+    for (const id of ['wave','kpay','promptpay','usdt']) { const current = settings.payments[id] || {}; settings.payments[id] = { ...current, name: document.getElementById(`payName${id}`)?.value.trim() || '', account: document.getElementById(`payAccount${id}`)?.value.trim() || '', note: document.getElementById(`payNote${id}`)?.value.trim() || '', icon: document.getElementById({wave:'botIconWave',kpay:'botIconKpay',promptpay:'botIconPrompt',usdt:'botIconUsdt'}[id])?.value.trim() || current.icon || '💳' }; }
+    settings.payments.promptpay.label = 'Thai Banks'; settings.payments.promptpay.bankName = document.getElementById('payBankNamepromptpay')?.value.trim() || settings.payments.promptpay.bankName || 'Kasikorn Bank';
+    settings.automation = { reminderDays: Number(document.getElementById('botReminderDays')?.value || 3), autoRemoveExpired: document.getElementById('botAutoRemove')?.value === 'true' };
+    settings.messages = { welcome: document.getElementById('msgWelcome')?.value.trim() || '', paymentReview: document.getElementById('msgReview')?.value.trim() || '', approved: document.getElementById('msgApproved')?.value.trim() || '', rejected: document.getElementById('msgRejected')?.value.trim() || '' };
+    settings.redeemCodes = [...document.querySelectorAll('#redeemCodes [data-code]')].map(input => { const i = input.dataset.code, rewards = [0,1,2].map(n => ({ days:Number(document.querySelector(`[data-rdays="${i}-${n}"]`)?.value || 0), slots:Number(document.querySelector(`[data-rslots="${i}-${n}"]`)?.value || 0) })).filter(reward => reward.days > 0 && reward.slots > 0); return { code:input.value.trim().toUpperCase(), label:document.querySelector(`[data-label="${i}"]`)?.value.trim() || '', maxUses:Number(document.querySelector(`[data-max="${i}"]`)?.value || 0) || rewards.reduce((total,reward) => total + reward.slots, 0), endsOn:document.querySelector(`[data-ends="${i}"]`)?.value || '', active:Boolean(document.querySelector(`[data-active="${i}"]`)?.checked), rewards }; }).filter(code => code.code || code.label || code.rewards.length);
+    if (settings.redeemCodes.some(code => !/^[A-Z0-9-]{3,40}$/.test(code.code) || !code.label || !code.rewards.length)) return toast('Every redeem code needs a code, campaign name, and at least one reward.');
+    settings.officialLinks = [...document.querySelectorAll('[data-link-label]')].map(input => { const i=input.dataset.linkLabel; return { label:input.value.trim(), url:document.querySelector(`[data-link-url="${i}"]`)?.value.trim() || '' }; }).filter(link => link.label || link.url);
+    settings.admins = Array.from({length:5}, (_, i) => ({ telegramId:document.querySelector(`[data-admin-id="${i}"]`)?.value.trim() || '', username:document.querySelector(`[data-admin-user="${i}"]`)?.value.trim() || '', name:document.querySelector(`[data-admin-name="${i}"]`)?.value.trim() || '', active:Boolean(document.querySelector(`[data-admin-active="${i}"]`)?.checked) })).filter(admin => admin.telegramId);
+    state.botSettings = settings; localStorage.setItem('ledgerly-data', JSON.stringify(state));
+    try { if (window.firebaseClient && window.firebaseUser) await firebaseClient.setDoc(firebaseClient.doc(firebaseClient.db,'ledgerData',window.firebaseUser.uid),state); toast('Bot settings saved to Firebase.'); } catch (error) { toast('Saved locally, but cloud sync failed.'); console.error(error); }
+    drawVipLists();
+  };
+  setTimeout(drawVipLists, 800);
+})();
 </script></body></html>
