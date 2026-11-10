@@ -407,6 +407,8 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
   renewalView.className = 'view'; renewalView.id = 'viprenewals';
   renewalView.innerHTML = `<header class="top"><div><h1>VIP Renewals</h1><div class="muted">Members who bought again while their VIP access was still active.</div></div></header><div class="notice">A record appears here only when the customer had remaining active days at the time the payment was approved.</div><div class="vip-tools"><input id="renewalSearch" type="search" placeholder="Search name, @username, Telegram ID, or order ID"><select id="renewalMethod"><option value="">All payment methods</option><option value="wave">Wave Pay</option><option value="kpay">KPay</option><option value="thai">Thai Banks</option><option value="usdt">USDT (BEP20)</option></select></div>`;
   oldPanel.remove(); renewalView.append(oldPanel); document.querySelector('main').append(renewalView);
+  const renewalHeader = oldPanel.querySelector('thead tr');
+  if (renewalHeader && !renewalHeader.querySelector('.actions-head')) { const th=document.createElement('th'); th.className='actions-head'; th.textContent='Actions'; renewalHeader.append(th); }
   const nav = document.createElement('button'); nav.className = 'nav'; nav.dataset.view = 'viprenewals'; nav.innerHTML = '↻ VIP Renewals';
   const vipNav = document.querySelector('.nav[data-view="vip"]'); vipNav.after(nav); nav.onclick = () => switchView('viprenewals');
   const safe = value => esc(value || '');
@@ -414,10 +416,66 @@ let editingId=null;const baseRenderTables=renderTables,baseSaveRecord=saveRecord
   const paymentMatch = (item, filter) => { const source=String(item.paymentMethod || item.selectedPaymentMethod || '').toLowerCase(); return !filter || filter==='wave'&&source.includes('wave') || filter==='kpay'&&source.includes('kpay') || filter==='thai'&&(source.includes('thai')||source.includes('prompt')) || filter==='usdt'&&source.includes('usdt'); };
   const bangkokDate = value => { const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)); const get=type=>parts.find(part=>part.type===type)?.value; return `${get('year')}-${get('month')}-${get('day')}`; };
   const remaining = (renewedAt, priorExpiry) => { if(!/^\d{4}-\d{2}-\d{2}$/.test(String(priorExpiry||'')) || !renewedAt) return '—'; const renewed=bangkokDate(renewedAt); const days=Math.ceil((Date.parse(`${priorExpiry}T00:00:00Z`)-Date.parse(`${renewed}T00:00:00Z`))/86400000); return days > 0 ? `${days} days remaining` : '—'; };
-  const renderRenewalPage = () => { const search=String(document.getElementById('renewalSearch')?.value||'').trim().toLowerCase(), filter=document.getElementById('renewalMethod')?.value||''; const rows=(state.vipRenewalHistory||[]).filter(item => (!search||text(item).includes(search)) && paymentMatch(item,filter)).sort((a,b)=>String(b.renewedAt||'').localeCompare(String(a.renewedAt||''))); document.getElementById('renewalVipTable').innerHTML=rows.map(item=>`<tr><td><b>${safe(item.customerName)}</b>${item.username||item.telegramId?`<br><span class="muted">${item.username?`@${safe(String(item.username).replace(/^@/,''))}`:''}${item.telegramId?` · ID: ${safe(item.telegramId)}`:''}</span>`:''}</td><td>${safe(item.planLabel)}</td><td>${item.renewedAt?safe(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',dateStyle:'medium',timeStyle:'short'}).format(new Date(item.renewedAt))):'—'}</td><td>${safe(item.previousExpiry||'—')}<br><span class="muted">${remaining(item.renewedAt,item.previousExpiry)}</span></td><td>${safe(item.newExpiry||'—')}</td><td>${safe(item.paymentMethod||'—')}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No verified renewals match this search.</td></tr>'; };
+  const renderRenewalPage = () => { const search=String(document.getElementById('renewalSearch')?.value||'').trim().toLowerCase(), filter=document.getElementById('renewalMethod')?.value||''; const rows=(state.vipRenewalHistory||[]).filter(item => (!search||text(item).includes(search)) && paymentMatch(item,filter)).sort((a,b)=>String(b.renewedAt||'').localeCompare(String(a.renewedAt||''))); document.getElementById('renewalVipTable').innerHTML=rows.map(item=>`<tr><td><b>${safe(item.customerName)}</b>${item.username||item.telegramId?`<br><span class="muted">${item.username?`@${safe(String(item.username).replace(/^@/,''))}`:''}${item.telegramId?` · ID: ${safe(item.telegramId)}`:''}</span>`:''}</td><td>${safe(item.planLabel)}</td><td>${item.renewedAt?safe(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',dateStyle:'medium',timeStyle:'short'}).format(new Date(item.renewedAt))):'—'}</td><td>${safe(item.previousExpiry||'—')}<br><span class="muted">${remaining(item.renewedAt,item.previousExpiry)}</span></td><td>${safe(item.newExpiry||'—')}</td><td>${safe(item.paymentMethod||'—')}</td><td class="record-actions"><button class="btn" data-renewal-edit="${safe(item.orderId)}">Edit</button><button class="btn danger" data-renewal-delete="${safe(item.orderId)}">Delete</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No verified renewals match this search.</td></tr>'; };
   const renderVipManagement = () => { const search=String(document.getElementById('vipSearch')?.value||'').trim().toLowerCase(), filter=document.getElementById('vipMethod')?.value||''; const rows=(state.records||[]).filter(item => item.category==='VIP' && (!search||[item.customer,item.telegramName,item.telegramId,item.orderId,item.notes].some(value=>String(value||'').toLowerCase().includes(search))) && paymentMatch(item,filter)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))); document.getElementById('vipTable').innerHTML=rows.map(item=>`<tr><td><b>${safe(item.customer)}</b>${item.telegramName||item.telegramId?`<br><span class="muted">${safe(item.telegramName)}${item.telegramId?` · ID: ${safe(item.telegramId)}`:''}</span>`:''}</td><td>${safe(item.plan||'—')}</td><td>${safe(item.date)}<br><span class="muted">${safe(item.endDate||'—')}</span></td><td>${money(item.agreed,item.currency)}</td><td>${money(item.paid,item.currency)} / ${money(Math.max(0,Number(item.agreed||0)-Number(item.paid||0)),item.currency)}</td><td><span class="status ${safe(String(item.status||'Pending').split(' ')[0])}">${safe(item.status||'Pending')}</span></td><td class="record-actions"><button class="btn" data-edit="${safe(item.id)}">Edit</button><button class="btn danger" data-delete="${safe(item.id)}">Delete</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No VIP purchases match this search.</td></tr>'; };
   ['vipSearch','vipMethod'].forEach(id=>document.getElementById(id)?.addEventListener(id==='vipSearch'?'input':'change',renderVipManagement));
   ['renewalSearch','renewalMethod'].forEach(id=>document.getElementById(id)?.addEventListener(id==='renewalSearch'?'input':'change',renderRenewalPage));
   const currentRender=render; render=()=>{currentRender();renderVipManagement();renderRenewalPage();}; setTimeout(()=>{renderVipManagement();renderRenewalPage();},900);
+})();
+</script><script>
+/* Renewal-page corrections affect dashboard presentation only; customer access and Telegram orders stay untouched. */
+(() => {
+  let editingOrderId = '', deletingOrderId = '';
+  const renewals = () => Array.isArray(state.vipRenewalHistory) ? state.vipRenewalHistory : [];
+  const persist = async () => {
+    localStorage.setItem('ledgerly-data', JSON.stringify(state));
+    try { if (window.firebaseClient && window.firebaseUser) await firebaseClient.setDoc(firebaseClient.doc(firebaseClient.db, 'ledgerData', window.firebaseUser.uid), state); } catch (error) { console.error(error); toast('Saved on this device, but cloud sync failed.'); }
+  };
+  document.addEventListener('click', event => {
+    const edit = event.target.closest('[data-renewal-edit]');
+    const remove = event.target.closest('[data-renewal-delete]');
+    if (edit) {
+      const orderId = edit.dataset.renewalEdit;
+      const record = (state.records || []).find(item => String(item.orderId || '') === orderId || item.id === `vip_${orderId}`);
+      if (!record) return toast('The matching dashboard record was not found.');
+      editingOrderId = orderId;
+      editRecord(record.id);
+    }
+    if (remove) {
+      deletingOrderId = remove.dataset.renewalDelete;
+      const item = renewals().find(row => String(row.orderId) === deletingOrderId);
+      const modal = document.getElementById('deleteConfirm');
+      document.getElementById('deleteConfirmText').innerHTML = `Hide this test renewal for <b>${esc(item?.customerName || 'this customer')}</b> from the dashboard?`;
+      modal.classList.add('show');
+    }
+  });
+  const approve = document.getElementById('deleteApprove');
+  document.getElementById('deleteCancel')?.addEventListener('click', () => { deletingOrderId = ''; });
+  document.getElementById('deleteConfirm')?.addEventListener('click', event => { if (event.target.id === 'deleteConfirm') deletingOrderId = ''; });
+  approve?.addEventListener('click', async event => {
+    if (!deletingOrderId) return;
+    event.stopImmediatePropagation();
+    const orderId = deletingOrderId; deletingOrderId = '';
+    state.records = (state.records || []).filter(item => String(item.orderId || '') !== orderId && item.id !== `vip_${orderId}`);
+    state.vipRenewalHistory = renewals().filter(item => String(item.orderId || '') !== orderId);
+    state.hiddenRenewalOrderIds = [...new Set([...(state.hiddenRenewalOrderIds || []), orderId])];
+    if (state.renewalOverrides) delete state.renewalOverrides[orderId];
+    document.getElementById('deleteConfirm').classList.remove('show');
+    await persist(); render(); toast('Test renewal removed from the dashboard.');
+  }, true);
+  const baseSave = window.saveRecord;
+  window.saveRecord = function () {
+    baseSave();
+    if (!editingOrderId) return;
+    const orderId = editingOrderId; editingOrderId = '';
+    queueMicrotask(async () => {
+      const record = (state.records || []).find(item => String(item.orderId || '') === orderId || item.id === `vip_${orderId}`);
+      if (!record) return;
+      const original = renewals().find(item => String(item.orderId || '') === orderId) || {};
+      state.renewalOverrides = state.renewalOverrides || {};
+      state.renewalOverrides[orderId] = { customerName: record.customer || original.customerName, username: String(record.telegramName || original.username || '').replace(/^@/, ''), telegramId: record.telegramId || original.telegramId || '', planLabel: record.plan || original.planLabel, paymentMethod: record.paymentMethod || original.paymentMethod, currency: record.currency || original.currency, amount: Number(record.agreed || original.amount || 0), renewedAt: record.date ? `${record.date}T12:00:00.000Z` : original.renewedAt, previousExpiry: original.previousExpiry || '', newExpiry: record.endDate || original.newExpiry || '' };
+      await persist(); render(); toast('Renewal display details updated.');
+    });
+  };
 })();
 </script></body></html>
